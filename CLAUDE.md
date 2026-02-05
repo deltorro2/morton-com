@@ -26,7 +26,5 @@ Python 3.10+: Follow standard conventions
 ## Recent Changes
 - 001-dual-panel-filemanager: Added Python 3.10+ + kinter/ttk (GUI), google-cloud-storage (GCS API), google-auth-oauthlib (OAuth2 browser flow), pathlib (file paths)
 
-- 001-dual-panel-filemanager: Added Python 3.10+ + kinter/ttk (GUI), google-cloud-storage (GCS API), pathlib (file paths)
-
 <!-- MANUAL ADDITIONS START -->
 <!-- MANUAL ADDITIONS END -->
