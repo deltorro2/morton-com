@@ -175,6 +175,10 @@ class Panel(ttk.Frame):
                     Path(self._state.location),
                     show_hidden=self._show_hidden,
                 )
+                # Prepend ".." entry when not at a filesystem root
+                current = Path(self._state.location)
+                if current.parent != current:
+                    items = [".."] + list(items)
                 self.after(0, lambda: self._display_items(items, "local"))
 
             elif self._state.source_type == SourceType.GCS_PROJECT:
@@ -339,7 +343,7 @@ class Panel(ttk.Frame):
         self._file_list.select_all()
 
     def get_selected_items(self) -> list:
-        return self._file_list.get_selected_items()
+        return [i for i in self._file_list.get_selected_items() if i != ".."]
 
     def focus_panel(self) -> None:
         self._file_list.focus_widget()

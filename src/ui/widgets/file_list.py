@@ -191,7 +191,15 @@ class FileListWidget(ttk.Frame):
             val = self._tree.set(iid, column)
             decorated.append((val, iid))
 
+        # Keep ".." pinned at position 0
+        parent_entry = None
+        if self._items and self._items[0] == "..":
+            parent_entry = decorated.pop(0)
+
         decorated.sort(key=lambda x: x[0].lower(), reverse=not self._sort_ascending)
+
+        if parent_entry is not None:
+            decorated.insert(0, parent_entry)
 
         for new_pos, (_, iid) in enumerate(decorated):
             self._tree.move(iid, "", new_pos)
