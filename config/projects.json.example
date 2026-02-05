@@ -1,0 +1,13 @@
+{
+  "projects": [
+    {
+      "project_id": "my-gcp-project",
+      "display_name": "My Project",
+      "default": true
+    },
+    {
+      "project_id": "another-project",
+      "display_name": "Another Project"
+    }
+  ]
+}
