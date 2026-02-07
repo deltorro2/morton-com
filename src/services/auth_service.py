@@ -1,15 +1,17 @@
-"""Authentication service using Application Default Credentials (ADC).
+"""Authentication service using browser-based OAuth2 flow.
 
-Uses credentials from `gcloud auth application-default login` to authenticate
-with Google Cloud services. No OAuth2 client ID/secret required.
+Uses google_auth_oauthlib to open a browser for user authentication.
+No gcloud CLI required - authenticates directly via browser.
 """
 
 from __future__ import annotations
 
+import json
 import logging
 import threading
 from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 from src.errors import AuthenticationError
 from src.models import AuthState
@@ -21,18 +23,33 @@ logger = logging.getLogger(__name__)
 SCOPES = [
     "https://www.googleapis.com/auth/devstorage.read_write",
     "https://www.googleapis.com/auth/cloud-platform",
+    "openid",
+    "https://www.googleapis.com/auth/userinfo.email",
 ]
+
+# Default OAuth2 client config path (user can place their own here)
+DEFAULT_CLIENT_SECRETS_PATH = Path.home() / ".config" / "morton" / "client_secrets.json"
 
 
 class AuthService:
-    """Service for authentication using Application Default Credentials."""
+    """Service for browser-based OAuth2 authentication."""
 
     def __init__(
         self,
         credential_storage: CredentialStorage | None = None,
-        client_config: dict | None = None,  # Kept for API compatibility
+        client_config: dict | None = None,
+        client_secrets_path: Path | None = None,
     ) -> None:
+        """Initialize AuthService.
+
+        Args:
+            credential_storage: Storage for persisting credentials.
+            client_config: OAuth2 client configuration dict.
+            client_secrets_path: Path to client_secrets.json file.
+        """
         self._storage = credential_storage or CredentialStorage()
+        self._client_config = client_config
+        self._client_secrets_path = client_secrets_path or DEFAULT_CLIENT_SECRETS_PATH
         self._state = AuthState.SIGNED_OUT
         self._current_user: UserSession | None = None
         self._credentials: object | None = None
@@ -48,13 +65,46 @@ class AuthService:
         """Current authenticated user, or ``None``."""
         return self._current_user
 
+    def _get_client_config(self) -> dict:
+        """Get OAuth2 client configuration.
+
+        Returns client_config if provided, otherwise loads from file.
+        Raises AuthenticationError if no config available.
+        """
+        if self._client_config:
+            return self._client_config
+
+        if self._client_secrets_path.exists():
+            try:
+                with open(self._client_secrets_path) as f:
+                    return json.load(f)
+            except Exception as exc:
+                raise AuthenticationError(
+                    message=f"Failed to load client secrets: {exc}",
+                    user_message="Could not load OAuth2 configuration.",
+                    suggested_action=f"Check the file at {self._client_secrets_path}",
+                ) from exc
+
+        raise AuthenticationError(
+            message="No OAuth2 client configuration found",
+            user_message="OAuth2 client credentials not configured.",
+            suggested_action=(
+                f"Create a client_secrets.json file at:\n"
+                f"{self._client_secrets_path}\n\n"
+                "Get credentials from Google Cloud Console:\n"
+                "1. Go to APIs & Services > Credentials\n"
+                "2. Create OAuth 2.0 Client ID (Desktop app)\n"
+                "3. Download JSON and save to the path above"
+            ),
+        )
+
     def sign_in(
         self,
         on_browser_opened: Callable[[], None] | None = None,
         on_success: Callable[[UserSession], None] | None = None,
         on_error: Callable[[Exception], None] | None = None,
     ) -> None:
-        """Load Application Default Credentials in a background thread."""
+        """Start browser-based OAuth2 sign-in flow in a background thread."""
         with self._lock:
             if self._state == AuthState.SIGNING_IN:
                 raise AuthenticationError(
@@ -77,30 +127,39 @@ class AuthService:
         on_success: Callable[[UserSession], None] | None,
         on_error: Callable[[Exception], None] | None,
     ) -> None:
-        """Load ADC credentials (runs in background thread)."""
+        """Execute OAuth2 browser flow (runs in background thread)."""
         try:
-            import google.auth
-            import google.auth.transport.requests
+            from google_auth_oauthlib.flow import InstalledAppFlow
 
+            # Get client configuration
+            client_config = self._get_client_config()
+
+            # Create OAuth2 flow
+            flow = InstalledAppFlow.from_client_config(
+                client_config,
+                scopes=SCOPES,
+            )
+
+            # Notify that browser will open
             if on_browser_opened:
                 on_browser_opened()
 
-            # Load Application Default Credentials
-            credentials, project = google.auth.default(scopes=SCOPES)
+            # Run local server for OAuth2 callback (opens browser)
+            credentials = flow.run_local_server(
+                port=0,  # Use any available port
+                prompt="consent",
+                success_message="Authentication successful! You can close this window.",
+                open_browser=True,
+            )
 
-            # Refresh to ensure we have a valid token
-            request = google.auth.transport.requests.Request()
-            credentials.refresh(request)
-
-            # Try to get user email
+            # Get user email
             email = self._fetch_email(credentials)
 
-            # Store credentials for later use
+            # Store credentials
             self._credentials = credentials
 
-            # Create session
-            # ADC credentials may not have expiry, use a default
-            expiry = getattr(credentials, 'expiry', None)
+            # Handle expiry
+            expiry = credentials.expiry
             if expiry is None:
                 expiry = datetime.now(timezone.utc) + timedelta(hours=1)
             elif expiry.tzinfo is None:
@@ -109,7 +168,7 @@ class AuthService:
             session = UserSession(
                 email=email,
                 access_token=credentials.token or "",
-                refresh_token="",  # ADC handles refresh internally
+                refresh_token=credentials.refresh_token or "",
                 token_expiry=expiry,
                 scopes=list(SCOPES),
                 signed_in_at=datetime.now(timezone.utc),
@@ -121,58 +180,68 @@ class AuthService:
                 self._current_user = session
                 self._state = AuthState.SIGNED_IN
 
-            logger.info("Signed in as %s (using ADC)", email)
+            logger.info("Signed in as %s", email)
             if on_success:
                 on_success(session)
+
+        except AuthenticationError:
+            # Re-raise our own errors
+            with self._lock:
+                self._state = AuthState.SIGNED_OUT
+            raise
 
         except Exception as exc:
             with self._lock:
                 self._state = AuthState.SIGNED_OUT
             logger.error("Sign-in failed: %s", exc)
 
-            # Provide helpful error message
-            error_msg = str(exc)
-            if "Could not automatically determine credentials" in error_msg:
-                error = AuthenticationError(
-                    message=f"ADC not found: {exc}",
-                    user_message="No Google Cloud credentials found.",
-                    suggested_action="Run 'gcloud auth application-default login' in your terminal first.",
-                    technical_detail=error_msg,
-                )
-            else:
-                error = exc
+            error = AuthenticationError(
+                message=f"OAuth2 sign-in failed: {exc}",
+                user_message="Sign-in failed.",
+                suggested_action="Please try again or check your internet connection.",
+                technical_detail=str(exc),
+            )
 
             if on_error:
                 on_error(error)
 
     @staticmethod
     def _fetch_email(credentials: object) -> str:
-        """Fetch the user's email from the credentials or userinfo endpoint."""
-        # First try to get email from credentials directly
-        if hasattr(credentials, 'service_account_email'):
-            return credentials.service_account_email
+        """Fetch the user's email from credentials or userinfo endpoint."""
+        # Try id_token first (contains email for OAuth2 flow)
+        id_token = getattr(credentials, "id_token", None)
+        if id_token:
+            try:
+                import google.oauth2.id_token
+                import google.auth.transport.requests
 
-        # Try to fetch from userinfo endpoint
+                request = google.auth.transport.requests.Request()
+                id_info = google.oauth2.id_token.verify_oauth2_token(
+                    id_token, request
+                )
+                if "email" in id_info:
+                    return id_info["email"]
+            except Exception as exc:
+                logger.debug("Could not decode id_token: %s", exc)
+
+        # Try userinfo endpoint
         try:
             import google.auth.transport.requests
-
-            request = google.auth.transport.requests.Request()
-
-            # Ensure token is fresh
-            if hasattr(credentials, 'refresh'):
-                credentials.refresh(request)
-
-            # Make request to userinfo endpoint
             import urllib.request
 
-            token = getattr(credentials, 'token', None)
+            # Ensure token is fresh
+            if hasattr(credentials, "refresh") and hasattr(credentials, "expired"):
+                if credentials.expired:
+                    request = google.auth.transport.requests.Request()
+                    credentials.refresh(request)
+
+            token = getattr(credentials, "token", None)
             if token:
                 req = urllib.request.Request(
                     "https://www.googleapis.com/oauth2/v1/userinfo",
-                    headers={"Authorization": f"Bearer {token}"}
+                    headers={"Authorization": f"Bearer {token}"},
                 )
                 with urllib.request.urlopen(req, timeout=10) as resp:
-                    import json
                     data = json.loads(resp.read().decode())
                     return data.get("email", "authenticated-user")
         except Exception as exc:
@@ -227,17 +296,16 @@ class AuthService:
             self._state = AuthState.REFRESHING
 
         try:
-            import google.auth
             import google.auth.transport.requests
 
-            # Reload ADC credentials
-            credentials, project = google.auth.default(scopes=SCOPES)
+            if self._credentials is None:
+                # Try to rebuild credentials from stored session
+                self._credentials = self._build_credentials_from_session()
+
             request = google.auth.transport.requests.Request()
-            credentials.refresh(request)
+            self._credentials.refresh(request)
 
-            self._credentials = credentials
-
-            expiry = getattr(credentials, 'expiry', None)
+            expiry = getattr(self._credentials, "expiry", None)
             if expiry is None:
                 expiry = datetime.now(timezone.utc) + timedelta(hours=1)
             elif expiry.tzinfo is None:
@@ -245,8 +313,8 @@ class AuthService:
 
             session = UserSession(
                 email=self._current_user.email,
-                access_token=credentials.token or "",
-                refresh_token="",
+                access_token=self._credentials.token or "",
+                refresh_token=getattr(self._credentials, "refresh_token", "") or "",
                 token_expiry=expiry,
                 scopes=self._current_user.scopes,
                 signed_in_at=self._current_user.signed_in_at,
@@ -271,53 +339,56 @@ class AuthService:
             if on_error:
                 on_error(exc)
 
-    def load_stored_credentials(self) -> UserSession | None:
-        """Load credentials on startup - tries ADC first."""
-        # First try to load ADC
-        try:
-            import google.auth
-            import google.auth.transport.requests
+    def _build_credentials_from_session(self) -> object:
+        """Build credentials object from stored session."""
+        from google.oauth2.credentials import Credentials
 
-            credentials, project = google.auth.default(scopes=SCOPES)
-            request = google.auth.transport.requests.Request()
-            credentials.refresh(request)
-
-            email = self._fetch_email(credentials)
-            self._credentials = credentials
-
-            expiry = getattr(credentials, 'expiry', None)
-            if expiry is None:
-                expiry = datetime.now(timezone.utc) + timedelta(hours=1)
-            elif expiry.tzinfo is None:
-                expiry = expiry.replace(tzinfo=timezone.utc)
-
-            session = UserSession(
-                email=email,
-                access_token=credentials.token or "",
-                refresh_token="",
-                token_expiry=expiry,
-                scopes=list(SCOPES),
-                signed_in_at=datetime.now(timezone.utc),
+        if self._current_user is None:
+            raise AuthenticationError(
+                message="No session to build credentials from",
+                user_message="You are not signed in.",
+                suggested_action="Sign in first.",
             )
 
-            with self._lock:
-                self._current_user = session
-                self._state = AuthState.SIGNED_IN
+        # Get client config for token refresh
+        client_config = self._get_client_config()
+        client_info = client_config.get("installed") or client_config.get("web", {})
 
-            logger.info("Loaded ADC credentials for %s", email)
-            return session
+        return Credentials(
+            token=self._current_user.access_token,
+            refresh_token=self._current_user.refresh_token,
+            token_uri="https://oauth2.googleapis.com/token",
+            client_id=client_info.get("client_id"),
+            client_secret=client_info.get("client_secret"),
+            scopes=self._current_user.scopes,
+        )
 
-        except Exception as exc:
-            logger.debug("Could not load ADC: %s", exc)
-
-        # Fall back to stored session
+    def load_stored_credentials(self) -> UserSession | None:
+        """Load credentials on startup from storage."""
         session = self._storage.load()
         if session is None:
             return None
 
+        # Check if token needs refresh
+        now = datetime.now(timezone.utc)
+        token_expiry = session.token_expiry
+        if token_expiry.tzinfo is None:
+            token_expiry = token_expiry.replace(tzinfo=timezone.utc)
+
+        needs_refresh = (token_expiry - now) < timedelta(minutes=5)
+
         with self._lock:
             self._current_user = session
             self._state = AuthState.SIGNED_IN
+
+        # Try to rebuild and refresh credentials
+        if session.refresh_token:
+            try:
+                self._credentials = self._build_credentials_from_session()
+                if needs_refresh:
+                    self.refresh_token()
+            except Exception as exc:
+                logger.debug("Could not rebuild credentials: %s", exc)
 
         return session
 
@@ -330,8 +401,9 @@ class AuthService:
             # Refresh if needed
             try:
                 import google.auth.transport.requests
-                request = google.auth.transport.requests.Request()
-                if hasattr(self._credentials, 'refresh'):
+
+                if hasattr(self._credentials, "expired") and self._credentials.expired:
+                    request = google.auth.transport.requests.Request()
                     self._credentials.refresh(request)
             except Exception:
                 pass
@@ -344,17 +416,15 @@ class AuthService:
                 suggested_action="Sign in to access GCS.",
             )
 
-        # Try to get fresh ADC credentials
+        # Try to rebuild credentials from session
         try:
-            import google.auth
-            credentials, project = google.auth.default(scopes=SCOPES)
-            self._credentials = credentials
-            return credentials
+            self._credentials = self._build_credentials_from_session()
+            return self._credentials
         except Exception as exc:
             raise AuthenticationError(
                 message=f"Could not get credentials: {exc}",
                 user_message="Authentication failed.",
-                suggested_action="Run 'gcloud auth application-default login' in your terminal.",
+                suggested_action="Please sign in again.",
             ) from exc
 
     def ensure_authenticated(
