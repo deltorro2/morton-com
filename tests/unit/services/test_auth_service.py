@@ -92,28 +92,19 @@ class TestRunSignIn:
         service = AuthService(credential_storage=mock_storage)
         service._state = AuthState.SIGNING_IN
 
-        # Mock the OAuth flow
+        # Mock ADC credentials
         mock_creds = MagicMock()
         mock_creds.token = "new_access_token"
-        mock_creds.refresh_token = "new_refresh_token"
         mock_creds.expiry = datetime(2099, 12, 31, 23, 59, 59, tzinfo=timezone.utc)
-        mock_creds.scopes = ["https://www.googleapis.com/auth/devstorage.read_write"]
-
-        mock_flow = MagicMock()
-        mock_flow.run_local_server.return_value = mock_creds
 
         on_browser_opened = MagicMock()
         on_success = MagicMock()
         on_error = MagicMock()
 
-        # Mock the google_auth_oauthlib module that gets imported inside _run_sign_in
-        mock_flow_module = MagicMock()
-        mock_flow_module.InstalledAppFlow = MagicMock()
-        mock_flow_module.InstalledAppFlow.from_client_config.return_value = mock_flow
-
-        with patch.dict("sys.modules", {"google_auth_oauthlib.flow": mock_flow_module}):
-            with patch.object(service, "_fetch_email", return_value="user@example.com"):
-                service._run_sign_in(on_browser_opened, on_success, on_error)
+        with patch("google.auth.default", return_value=(mock_creds, "test-project")):
+            with patch("google.auth.transport.requests.Request"):
+                with patch.object(service, "_fetch_email", return_value="user@example.com"):
+                    service._run_sign_in(on_browser_opened, on_success, on_error)
 
         assert service.state == AuthState.SIGNED_IN
         assert service.current_user is not None
@@ -133,15 +124,9 @@ class TestRunSignIn:
         on_success = MagicMock()
         on_error = MagicMock()
 
-        # Mock the google_auth_oauthlib module that gets imported inside _run_sign_in
-        mock_flow_module = MagicMock()
-        mock_flow_module.InstalledAppFlow = MagicMock()
-        mock_flow_module.InstalledAppFlow.from_client_config.side_effect = Exception(
-            "OAuth flow failed"
-        )
-
-        with patch.dict("sys.modules", {"google_auth_oauthlib.flow": mock_flow_module}):
-            service._run_sign_in(None, on_success, on_error)
+        with patch("google.auth.default", side_effect=Exception("ADC not found")):
+            with patch("google.auth.transport.requests.Request"):
+                service._run_sign_in(None, on_success, on_error)
 
         assert service.state == AuthState.SIGNED_OUT
         on_success.assert_not_called()
@@ -204,52 +189,21 @@ class TestRefreshToken:
     def test_run_refresh_success_updates_session_and_calls_on_success(self) -> None:
         """_run_refresh success updates session and calls on_success."""
         mock_storage = MagicMock()
-        client_config = {
-            "installed": {
-                "client_id": "test_client_id",
-                "client_secret": "test_client_secret",
-            }
-        }
-        service = AuthService(
-            credential_storage=mock_storage, client_config=client_config
-        )
+        service = AuthService(credential_storage=mock_storage)
         service._state = AuthState.SIGNED_IN
         service._current_user = _create_test_session(email="user@example.com")
 
-        # Mock refreshed credentials
+        # Mock refreshed ADC credentials
         mock_creds = MagicMock()
         mock_creds.token = "refreshed_access_token"
-        mock_creds.refresh_token = "refreshed_refresh_token"
         mock_creds.expiry = datetime(2099, 12, 31, 23, 59, 59, tzinfo=timezone.utc)
 
         on_success = MagicMock()
         on_error = MagicMock()
 
-        # Mock the modules that get imported inside _run_refresh
-        mock_creds_module = MagicMock()
-        mock_creds_module.Credentials.return_value = mock_creds
-
-        mock_transport_requests = MagicMock()
-        mock_request = MagicMock()
-        mock_transport_requests.Request.return_value = mock_request
-
-        # Need to mock the entire google.auth hierarchy for import to work
-        mock_google = MagicMock()
-        mock_google_auth = MagicMock()
-        mock_google_auth_transport = MagicMock()
-        mock_google.auth = mock_google_auth
-        mock_google_auth.transport = mock_google_auth_transport
-        mock_google_auth_transport.requests = mock_transport_requests
-
-        with patch.dict("sys.modules", {
-            "google": mock_google,
-            "google.auth": mock_google_auth,
-            "google.auth.transport": mock_google_auth_transport,
-            "google.auth.transport.requests": mock_transport_requests,
-            "google.oauth2": MagicMock(),
-            "google.oauth2.credentials": mock_creds_module,
-        }):
-            service._run_refresh(on_success, on_error)
+        with patch("google.auth.default", return_value=(mock_creds, "test-project")):
+            with patch("google.auth.transport.requests.Request"):
+                service._run_refresh(on_success, on_error)
 
         assert service.state == AuthState.SIGNED_IN
         assert service.current_user is not None
@@ -262,46 +216,16 @@ class TestRefreshToken:
     def test_run_refresh_failure_sets_signed_out_and_calls_on_error(self) -> None:
         """_run_refresh failure sets state to SIGNED_OUT and calls on_error."""
         mock_storage = MagicMock()
-        client_config = {
-            "installed": {
-                "client_id": "test_client_id",
-                "client_secret": "test_client_secret",
-            }
-        }
-        service = AuthService(
-            credential_storage=mock_storage, client_config=client_config
-        )
+        service = AuthService(credential_storage=mock_storage)
         service._state = AuthState.SIGNED_IN
         service._current_user = _create_test_session()
 
         on_success = MagicMock()
         on_error = MagicMock()
 
-        # Mock the modules that get imported inside _run_refresh
-        mock_creds_instance = MagicMock()
-        mock_creds_instance.refresh.side_effect = Exception("Refresh failed")
-        mock_creds_module = MagicMock()
-        mock_creds_module.Credentials.return_value = mock_creds_instance
-
-        mock_transport_requests = MagicMock()
-
-        # Need to mock the entire google.auth hierarchy for import to work
-        mock_google = MagicMock()
-        mock_google_auth = MagicMock()
-        mock_google_auth_transport = MagicMock()
-        mock_google.auth = mock_google_auth
-        mock_google_auth.transport = mock_google_auth_transport
-        mock_google_auth_transport.requests = mock_transport_requests
-
-        with patch.dict("sys.modules", {
-            "google": mock_google,
-            "google.auth": mock_google_auth,
-            "google.auth.transport": mock_google_auth_transport,
-            "google.auth.transport.requests": mock_transport_requests,
-            "google.oauth2": MagicMock(),
-            "google.oauth2.credentials": mock_creds_module,
-        }):
-            service._run_refresh(on_success, on_error)
+        with patch("google.auth.default", side_effect=Exception("Refresh failed")):
+            with patch("google.auth.transport.requests.Request"):
+                service._run_refresh(on_success, on_error)
 
         assert service.state == AuthState.SIGNED_OUT
         assert service.current_user is None
@@ -312,44 +236,54 @@ class TestRefreshToken:
 class TestLoadStoredCredentials:
     """Tests for load_stored_credentials method."""
 
-    def test_load_stored_credentials_returns_none_if_storage_returns_none(self) -> None:
-        """load_stored_credentials returns None if storage returns None."""
+    def test_load_stored_credentials_returns_none_if_adc_fails_and_storage_empty(self) -> None:
+        """load_stored_credentials returns None if ADC fails and storage is empty."""
         mock_storage = MagicMock()
         mock_storage.load.return_value = None
         service = AuthService(credential_storage=mock_storage)
 
-        result = service.load_stored_credentials()
+        with patch("google.auth.default", side_effect=Exception("ADC not found")):
+            with patch("google.auth.transport.requests.Request"):
+                result = service.load_stored_credentials()
 
         assert result is None
         assert service.state == AuthState.SIGNED_OUT
         assert service.current_user is None
 
-    def test_load_stored_credentials_sets_state_to_signed_in(self) -> None:
-        """load_stored_credentials sets state to SIGNED_IN when session found."""
+    def test_load_stored_credentials_uses_adc_when_available(self) -> None:
+        """load_stored_credentials uses ADC when available."""
+        mock_storage = MagicMock()
+        service = AuthService(credential_storage=mock_storage)
+
+        # Mock ADC credentials
+        mock_creds = MagicMock()
+        mock_creds.token = "adc_access_token"
+        mock_creds.expiry = datetime(2099, 12, 31, 23, 59, 59, tzinfo=timezone.utc)
+
+        with patch("google.auth.default", return_value=(mock_creds, "test-project")):
+            with patch("google.auth.transport.requests.Request"):
+                with patch.object(service, "_fetch_email", return_value="adc@example.com"):
+                    result = service.load_stored_credentials()
+
+        assert result is not None
+        assert result.email == "adc@example.com"
+        assert service.state == AuthState.SIGNED_IN
+        assert service.current_user == result
+
+    def test_load_stored_credentials_falls_back_to_storage_when_adc_fails(self) -> None:
+        """load_stored_credentials falls back to storage when ADC fails."""
         mock_storage = MagicMock()
         stored_session = _create_test_session(needs_refresh=False)
         mock_storage.load.return_value = stored_session
         service = AuthService(credential_storage=mock_storage)
 
-        result = service.load_stored_credentials()
+        with patch("google.auth.default", side_effect=Exception("ADC not found")):
+            with patch("google.auth.transport.requests.Request"):
+                result = service.load_stored_credentials()
 
         assert result == stored_session
         assert service.state == AuthState.SIGNED_IN
         assert service.current_user == stored_session
-
-    def test_load_stored_credentials_triggers_refresh_if_needs_refresh(self) -> None:
-        """load_stored_credentials triggers refresh if token needs_refresh."""
-        mock_storage = MagicMock()
-        stored_session = _create_test_session(needs_refresh=True)
-        mock_storage.load.return_value = stored_session
-        service = AuthService(credential_storage=mock_storage)
-
-        with patch.object(service, "refresh_token") as mock_refresh:
-            result = service.load_stored_credentials()
-
-        assert result == stored_session
-        assert service.state == AuthState.SIGNED_IN
-        mock_refresh.assert_called_once()
 
 
 class TestGetCredentials:
@@ -360,45 +294,43 @@ class TestGetCredentials:
         mock_storage = MagicMock()
         service = AuthService(credential_storage=mock_storage)
         service._current_user = None
+        service._credentials = None
 
         with pytest.raises(AuthenticationError) as exc_info:
             service.get_credentials()
 
         assert "Not authenticated" in str(exc_info.value)
 
-    def test_get_credentials_returns_credentials_object_when_authenticated(
-        self,
-    ) -> None:
-        """get_credentials returns Credentials object when authenticated."""
+    def test_get_credentials_returns_stored_credentials_when_available(self) -> None:
+        """get_credentials returns stored credentials when available."""
         mock_storage = MagicMock()
-        client_config = {
-            "installed": {
-                "client_id": "test_client_id",
-                "client_secret": "test_client_secret",
-            }
-        }
-        service = AuthService(
-            credential_storage=mock_storage, client_config=client_config
-        )
+        service = AuthService(credential_storage=mock_storage)
         service._current_user = _create_test_session()
 
-        # Mock the module that gets imported inside get_credentials
+        # Set up stored credentials
         mock_creds = MagicMock()
-        mock_creds_module = MagicMock()
-        mock_creds_module.Credentials.return_value = mock_creds
+        service._credentials = mock_creds
 
-        with patch.dict("sys.modules", {"google.oauth2.credentials": mock_creds_module}):
+        with patch("google.auth.transport.requests.Request"):
             result = service.get_credentials()
 
-        mock_creds_module.Credentials.assert_called_once_with(
-            token=service._current_user.access_token,
-            refresh_token=service._current_user.refresh_token,
-            token_uri="https://oauth2.googleapis.com/token",
-            client_id="test_client_id",
-            client_secret="test_client_secret",
-            scopes=service._current_user.scopes,
-        )
         assert result == mock_creds
+
+    def test_get_credentials_fetches_adc_when_no_stored_credentials(self) -> None:
+        """get_credentials fetches ADC when no stored credentials available."""
+        mock_storage = MagicMock()
+        service = AuthService(credential_storage=mock_storage)
+        service._current_user = _create_test_session()
+        service._credentials = None
+
+        # Mock ADC credentials
+        mock_creds = MagicMock()
+
+        with patch("google.auth.default", return_value=(mock_creds, "test-project")):
+            result = service.get_credentials()
+
+        assert result == mock_creds
+        assert service._credentials == mock_creds
 
 
 class TestEnsureAuthenticated:

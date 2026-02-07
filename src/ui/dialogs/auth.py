@@ -46,9 +46,9 @@ class SignInDialog(tk.Toplevel):
         ttk.Label(
             frame,
             text=(
-                "To browse and manage files in GCS buckets,\n"
-                "you need to sign in with your Google account.\n\n"
-                "Your browser will open for authentication."
+                "This app uses your gcloud credentials.\n\n"
+                "If not already done, run in your terminal:\n"
+                "  gcloud auth application-default login"
             ),
             justify=tk.CENTER,
         ).pack(pady=(0, 15))
@@ -67,7 +67,7 @@ class SignInDialog(tk.Toplevel):
 
         self._sign_in_btn = ttk.Button(
             btn_frame,
-            text="Sign in with Google",
+            text="Load Credentials",
             command=self._on_sign_in,
         )
         self._sign_in_btn.pack(side=tk.LEFT, padx=5)
@@ -89,13 +89,13 @@ class SignInDialog(tk.Toplevel):
 
     def _on_sign_in(self) -> None:
         self._sign_in_btn.configure(state=tk.DISABLED)
-        self._status_var.set("Opening browser...")
+        self._status_var.set("Loading credentials...")
         self._progress.pack(pady=(0, 10))
         self._progress.start(15)
 
         self._auth_service.sign_in(
             on_browser_opened=lambda: self.after(
-                0, lambda: self._status_var.set("Waiting for authentication...")
+                0, lambda: self._status_var.set("Authenticating...")
             ),
             on_success=lambda session: self.after(0, lambda: self._handle_success(session)),
             on_error=lambda exc: self.after(0, lambda: self._handle_error(exc)),
