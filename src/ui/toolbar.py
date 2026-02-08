@@ -19,6 +19,7 @@ class Toolbar(ttk.Frame):
         on_delete: callable | None = None,
         on_properties: callable | None = None,
         on_refresh: callable | None = None,
+        on_new_folder: callable | None = None,
         on_settings: callable | None = None,
     ) -> None:
         super().__init__(parent)
@@ -28,6 +29,7 @@ class Toolbar(ttk.Frame):
             "delete": on_delete,
             "properties": on_properties,
             "refresh": on_refresh,
+            "new_folder": on_new_folder,
             "settings": on_settings,
         }
 
@@ -42,6 +44,7 @@ class Toolbar(ttk.Frame):
             ("delete", "Delete (Del)", "delete"),
             ("properties", f"Properties ({mod}I)", "properties"),
             ("refresh", f"Refresh ({mod}R)", "refresh"),
+            ("new_folder", "New Folder (F7)", "new_folder"),
         ]
 
         for name, label, callback_key in btn_defs:
@@ -76,3 +79,8 @@ class Toolbar(ttk.Frame):
         for name in ("copy", "move", "delete", "properties"):
             if name in self._buttons:
                 self._buttons[name].state([state])
+
+    def set_new_folder_enabled(self, enabled: bool) -> None:
+        """Enable or disable the New Folder button."""
+        if "new_folder" in self._buttons:
+            self._buttons["new_folder"].state(["!disabled" if enabled else "disabled"])

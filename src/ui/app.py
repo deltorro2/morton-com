@@ -4,15 +4,16 @@ from __future__ import annotations
 
 import sys
 import tkinter as tk
+from pathlib import Path
 from tkinter import ttk
 from typing import Any
 
+from src.models import SourceType
+from src.models.transfer_operation import TransferDestination, TransferOperation
 from src.platform import get_platform
 from src.platform.base import PlatformService
 from src.services.auth_service import AuthService
 from src.services.config_manager import ConfigManager
-from src.models import SourceType
-from src.models.transfer_operation import TransferDestination, TransferOperation
 from src.services.local_filesystem import LocalFilesystem
 from src.services.transfer_manager import TransferManager
 from src.ui.account_menu import AccountMenu
@@ -80,6 +81,7 @@ class App:
             on_delete=self._on_delete,
             on_properties=self._on_properties,
             on_refresh=self._on_refresh,
+            on_new_folder=self._on_new_folder,
         )
         self._toolbar.pack(side=tk.LEFT, fill=tk.X, expand=True)
 
@@ -143,6 +145,9 @@ class App:
         # Select all
         self._root.bind(f"<{mod}-a>", lambda e: self._on_select_all())
 
+        # New Folder (F7)
+        self._root.bind("<F7>", lambda e: self._on_new_folder())
+
         # Refresh
         self._root.bind(f"<{mod}-r>", lambda e: self._on_refresh())
 
@@ -175,12 +180,19 @@ class App:
         self._toolbar.set_actions_enabled(
             len(self._left_panel.get_selected_items()) > 0
         )
+        self._update_new_folder_state()
 
     def _active_panel(self) -> Panel:
         return self._left_panel if self._active_panel_id == "left" else self._right_panel
 
     def _inactive_panel(self) -> Panel:
         return self._right_panel if self._active_panel_id == "left" else self._left_panel
+
+    def _update_new_folder_state(self) -> None:
+        """Enable/disable New Folder button based on active panel type."""
+        panel = self._active_panel()
+        enabled = panel.state.source_type != SourceType.GCS_PROJECT
+        self._toolbar.set_new_folder_enabled(enabled)
 
     # ------------------------------------------------------------------
     # Actions
@@ -330,6 +342,46 @@ class App:
     def _on_refresh(self) -> None:
         self._active_panel().refresh()
 
+    def _on_new_folder(self) -> None:
+        """Show the New Folder dialog and create the folder."""
+        panel = self._active_panel()
+        state = panel.state
+
+        # Not available on GCS project listing
+        if state.source_type == SourceType.GCS_PROJECT:
+            return
+
+        from src.ui.dialogs.new_folder import NewFolderDialog
+
+        dialog = NewFolderDialog(self._root)
+        if dialog.folder_name is None:
+            return
+
+        folder_name = dialog.folder_name
+
+        from tkinter import messagebox
+
+        from src.errors import FileSystemError
+
+        try:
+            if state.source_type == SourceType.LOCAL:
+                target = Path(state.location) / folder_name
+                self._local_fs.create_directory(target)
+            elif state.source_type == SourceType.GCS_BUCKET:
+                prefix = state.location or ""
+                self._gcs_client.create_folder(
+                    state.bucket_name, prefix + folder_name,
+                )
+        except (FileSystemError, Exception) as exc:
+            messagebox.showerror(
+                "New Folder",
+                str(getattr(exc, "user_message", exc)),
+                parent=self._root,
+            )
+            return
+
+        panel.refresh()
+
     def _on_select_all(self) -> None:
         self._active_panel().select_all()
 
@@ -357,6 +409,7 @@ class App:
         self._toolbar.set_actions_enabled(
             len(new_panel.get_selected_items()) > 0
         )
+        self._update_new_folder_state()
 
     def _on_panel_selection_changed(self, panel_id: str, items: list) -> None:
         """Update toolbar state when selection changes."""
@@ -369,6 +422,7 @@ class App:
             old_panel.clear_selection()
             self._switching_selection = False
         self._toolbar.set_actions_enabled(len(items) > 0)
+        self._update_new_folder_state()
 
     def _on_auth_changed(self) -> None:
         """Handle auth state change (sign-in/sign-out)."""

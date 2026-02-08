@@ -465,6 +465,47 @@ class LocalFilesystem:
             ) from exc
 
     # ------------------------------------------------------------------
+    # Create
+    # ------------------------------------------------------------------
+
+    def create_directory(self, path: Path) -> None:
+        """Create a new directory at *path*.
+
+        Multi-level paths (e.g. ``a/b/c``) are supported via
+        ``parents=True``.  ``exist_ok`` is ``False`` so that an error
+        is raised when the directory already exists.
+
+        Raises
+        ------
+        FileSystemError
+            If the directory already exists, permission is denied,
+            or another OS error occurs.
+        """
+        try:
+            path.mkdir(parents=True, exist_ok=False)
+        except FileExistsError as exc:
+            raise FileSystemError(
+                message=f"Directory already exists: {path}",
+                user_message=f'The folder "{path.name}" already exists.',
+                suggested_action="Choose a different name.",
+                technical_detail=str(exc),
+            ) from exc
+        except PermissionError as exc:
+            raise FileSystemError(
+                message=f"Permission denied creating directory: {path} -- {exc}",
+                user_message=f'Permission denied while creating "{path.name}".',
+                suggested_action="Check folder permissions, then retry.",
+                technical_detail=str(exc),
+            ) from exc
+        except OSError as exc:
+            raise FileSystemError(
+                message=f"Failed to create directory: {path} -- {exc}",
+                user_message=f'Could not create the folder "{path.name}".',
+                suggested_action="Check the path is valid and try again.",
+                technical_detail=str(exc),
+            ) from exc
+
+    # ------------------------------------------------------------------
     # Queries
     # ------------------------------------------------------------------
 

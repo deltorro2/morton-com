@@ -246,6 +246,29 @@ class GCSClient:
             ) from exc
 
     # ------------------------------------------------------------------
+    # Folder creation
+    # ------------------------------------------------------------------
+
+    def create_folder(self, bucket_name: str, prefix: str) -> None:
+        """Create a folder marker in GCS by uploading a zero-byte blob.
+
+        *prefix* must end with ``"/"``.  If it does not, a trailing
+        slash is appended automatically.
+        """
+        self._ensure_client()
+        if not prefix.endswith("/"):
+            prefix = prefix + "/"
+        try:
+            bucket = self._client.bucket(bucket_name)
+            blob = bucket.blob(prefix)
+            blob.upload_from_string(b"", content_type="application/x-directory")
+            logger.info("Created folder gs://%s/%s", bucket_name, prefix)
+        except Exception as exc:
+            raise self._map_exception(
+                exc, f"creating folder gs://{bucket_name}/{prefix}"
+            ) from exc
+
+    # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
 
