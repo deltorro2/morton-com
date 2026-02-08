@@ -90,9 +90,14 @@ class FileListWidget(ttk.Frame):
         self._tree.bind("<<TreeviewSelect>>", self._handle_selection)
         self._tree.bind("<Return>", self._handle_double_click)
         self._tree.bind("<Tab>", self._handle_tab)
-        self._tree.bind("<space>", self._handle_space)
         self._tree.bind("<Shift-Up>", self._handle_shift_up)
         self._tree.bind("<Shift-Down>", self._handle_shift_down)
+
+        # Remove the default Treeview class binding for <space>
+        # (it does "selection toggle [focus]" which conflicts with our
+        # multi-select handler). Then bind our own.
+        self._tree.unbind_class("Treeview", "<space>")
+        self._tree.bind("<space>", self._handle_space)
 
     def set_columns_for_local(self) -> None:
         """Configure columns for local filesystem display."""
@@ -244,13 +249,11 @@ class FileListWidget(ttk.Frame):
         focused = self._tree.focus()
         if not focused:
             return "break"
-        current_sel = set(self._tree.selection())
-        if focused in current_sel:
-            current_sel.discard(focused)
+        if focused in self._tree.selection():
+            self._tree.selection_remove(focused)
         else:
-            current_sel.add(focused)
-        self._tree.selection_set(list(current_sel))
-        # Move focus to next item
+            self._tree.selection_add(focused)
+        # Move focus to next item (Total Commander style)
         next_item = self._tree.next(focused)
         if next_item:
             self._tree.focus(next_item)
