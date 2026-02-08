@@ -241,6 +241,7 @@ class Panel(ttk.Frame):
             self._file_list.set_columns_for_gcs_objects()
 
         self._file_list.set_items(items, mode)
+        self._file_list.select_first()
         count = len(items)
         self._status_var.set(f"{count} item{'s' if count != 1 else ''}")
 
@@ -348,6 +349,12 @@ class Panel(ttk.Frame):
 
     def get_selected_items(self) -> list:
         return [i for i in self._file_list.get_selected_items() if i != ".."]
+
+    def clear_selection(self) -> None:
+        self._file_list.clear_selection()
+
+    def select_first(self) -> None:
+        self._file_list.select_first()
 
     def focus_panel(self) -> None:
         self._file_list.focus_widget()

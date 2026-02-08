@@ -299,17 +299,25 @@ class App:
 
     def _on_tab(self, event: tk.Event) -> str:
         """Switch focus between panels."""
+        old_panel = self._active_panel()
         if self._active_panel_id == "left":
             self._active_panel_id = "right"
-            self._right_panel.focus_panel()
         else:
             self._active_panel_id = "left"
-            self._left_panel.focus_panel()
+        old_panel.clear_selection()
+        new_panel = self._active_panel()
+        new_panel.focus_panel()
+        new_panel.select_first()
         return "break"  # Prevent default Tab behavior
 
     def _on_panel_selection_changed(self, panel_id: str, items: list) -> None:
         """Update toolbar state when selection changes."""
-        self._active_panel_id = panel_id
+        if self._active_panel_id != panel_id:
+            old_panel = self._active_panel()
+            self._active_panel_id = panel_id
+            old_panel.clear_selection()
+        else:
+            self._active_panel_id = panel_id
         self._toolbar.set_actions_enabled(len(items) > 0)
 
     def _on_auth_changed(self) -> None:

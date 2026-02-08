@@ -172,6 +172,14 @@ class FileListWidget(ttk.Frame):
         """Deselect all items."""
         self._tree.selection_remove(*self._tree.selection())
 
+    def select_first(self) -> None:
+        """Select the first item if any exist."""
+        children = self._tree.get_children()
+        if children:
+            self._tree.selection_set(children[0])
+            self._tree.focus(children[0])
+            self._tree.see(children[0])
+
     def _on_sort(self, column: str) -> None:
         """Sort items by column, toggling direction."""
         if self._sort_column == column:
