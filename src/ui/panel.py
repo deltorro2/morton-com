@@ -80,7 +80,7 @@ class Panel(ttk.Frame):
             textvariable=self._source_var,
             values=source_options,
             state="readonly",
-            width=20,
+            width=26,
         )
         self._source_combo.pack(side=tk.LEFT, padx=(0, 5))
         self._source_combo.bind("<<ComboboxSelected>>", self._on_source_changed)
@@ -220,11 +220,12 @@ class Panel(ttk.Frame):
                     )
                     for p in prefixes
                 ]
-                all_items: list = prefix_items + list(objects)
+                all_items: list = [".."] + prefix_items + list(objects)
                 self.after(0, lambda: self._display_items(all_items, "gcs_object"))
 
         except Exception as exc:
-            self.after(0, lambda: self._show_error(str(exc)))
+            msg = str(exc)
+            self.after(0, lambda: self._show_error(msg))
 
     def _display_items(self, items: list, mode: str) -> None:
         """Update the file list on the main thread."""
@@ -271,6 +272,9 @@ class Panel(ttk.Frame):
                 self._load_current()
 
         elif self._state.source_type == SourceType.GCS_BUCKET:
+            if isinstance(item, str) and item == "..":
+                self.navigate_up()
+                return
             from src.models.gcs_object import GCSObject
 
             if isinstance(item, GCSObject) and item.is_prefix:

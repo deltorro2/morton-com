@@ -64,6 +64,7 @@ class App:
 
         # Load stored credentials on startup
         self._auth_service.load_stored_credentials()
+        self._sync_gcs_credentials()
         self._account_menu.refresh()
 
         # Save window state on close
@@ -313,11 +314,22 @@ class App:
 
     def _on_auth_changed(self) -> None:
         """Handle auth state change (sign-in/sign-out)."""
+        self._sync_gcs_credentials()
         self._account_menu.refresh()
         # Refresh GCS panels
         for panel in (self._left_panel, self._right_panel):
             if panel.state.source_type in (SourceType.GCS_PROJECT, SourceType.GCS_BUCKET):
                 panel.refresh()
+
+    def _sync_gcs_credentials(self) -> None:
+        """Pass current auth credentials to the GCS client."""
+        if self._gcs_client is None:
+            return
+        try:
+            credentials = self._auth_service.get_credentials()
+            self._gcs_client.set_credentials(credentials)
+        except Exception:
+            pass
 
     def _on_close(self) -> None:
         """Save window state and exit."""
