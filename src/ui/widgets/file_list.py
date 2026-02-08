@@ -73,18 +73,26 @@ class FileListWidget(ttk.Frame):
             )
             self._tree.column(col_id, width=width, anchor=anchor, stretch=stretch)
 
-        # Scrollbar (auto-hide: only visible when content overflows)
+        # Scrollbar (auto-hide via grid_remove / grid)
         self._scrollbar = ttk.Scrollbar(self, orient=tk.VERTICAL, command=self._tree.yview)
         self._tree.configure(yscrollcommand=self._on_scroll_set)
         self._scrollbar_visible = False
 
-        self._tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        # Use grid so show/hide is reliable across tree rebuilds
+        self.grid_rowconfigure(0, weight=1)
+        self.grid_columnconfigure(0, weight=1)
+        self._tree.grid(row=0, column=0, sticky="nsew")
+        self._scrollbar.grid(row=0, column=1, sticky="ns")
+        self._scrollbar.grid_remove()
 
         # Bindings
         self._tree.bind("<Double-1>", self._handle_double_click)
         self._tree.bind("<<TreeviewSelect>>", self._handle_selection)
         self._tree.bind("<Return>", self._handle_double_click)
         self._tree.bind("<Tab>", self._handle_tab)
+        self._tree.bind("<space>", self._handle_space)
+        self._tree.bind("<Shift-Up>", self._handle_shift_up)
+        self._tree.bind("<Shift-Down>", self._handle_shift_down)
 
     def set_columns_for_local(self) -> None:
         """Configure columns for local filesystem display."""
@@ -231,6 +239,54 @@ class FileListWidget(ttk.Frame):
             self._on_tab()
         return "break"
 
+    def _handle_space(self, event: tk.Event) -> str:
+        """Toggle selection on focused item, then move focus down."""
+        focused = self._tree.focus()
+        if not focused:
+            return "break"
+        current_sel = set(self._tree.selection())
+        if focused in current_sel:
+            current_sel.discard(focused)
+        else:
+            current_sel.add(focused)
+        self._tree.selection_set(list(current_sel))
+        # Move focus to next item
+        next_item = self._tree.next(focused)
+        if next_item:
+            self._tree.focus(next_item)
+            self._tree.see(next_item)
+        return "break"
+
+    def _handle_shift_up(self, event: tk.Event) -> str:
+        """Extend selection upward."""
+        focused = self._tree.focus()
+        if not focused:
+            return "break"
+        prev_item = self._tree.prev(focused)
+        if not prev_item:
+            return "break"
+        current_sel = set(self._tree.selection())
+        current_sel.add(prev_item)
+        self._tree.selection_set(list(current_sel))
+        self._tree.focus(prev_item)
+        self._tree.see(prev_item)
+        return "break"
+
+    def _handle_shift_down(self, event: tk.Event) -> str:
+        """Extend selection downward."""
+        focused = self._tree.focus()
+        if not focused:
+            return "break"
+        next_item = self._tree.next(focused)
+        if not next_item:
+            return "break"
+        current_sel = set(self._tree.selection())
+        current_sel.add(next_item)
+        self._tree.selection_set(list(current_sel))
+        self._tree.focus(next_item)
+        self._tree.see(next_item)
+        return "break"
+
     def _handle_selection(self, event: tk.Event) -> None:
         if self._on_selection_changed:
             self._on_selection_changed(self.get_selected_items())
@@ -240,11 +296,11 @@ class FileListWidget(ttk.Frame):
         self._scrollbar.set(first, last)
         if float(first) <= 0.0 and float(last) >= 1.0:
             if self._scrollbar_visible:
-                self._scrollbar.pack_forget()
+                self._scrollbar.grid_remove()
                 self._scrollbar_visible = False
         else:
             if not self._scrollbar_visible:
-                self._scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+                self._scrollbar.grid()
                 self._scrollbar_visible = True
 
     def focus_widget(self) -> None:
