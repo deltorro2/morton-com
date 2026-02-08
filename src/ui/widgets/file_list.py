@@ -38,10 +38,12 @@ class FileListWidget(ttk.Frame):
         parent: tk.Widget,
         on_double_click: callable | None = None,
         on_selection_changed: callable | None = None,
+        on_tab: callable | None = None,
     ) -> None:
         super().__init__(parent)
         self._on_double_click = on_double_click
         self._on_selection_changed = on_selection_changed
+        self._on_tab = on_tab
         self._items: list[Any] = []
         self._sort_column = "name"
         self._sort_ascending = True
@@ -82,6 +84,7 @@ class FileListWidget(ttk.Frame):
         self._tree.bind("<Double-1>", self._handle_double_click)
         self._tree.bind("<<TreeviewSelect>>", self._handle_selection)
         self._tree.bind("<Return>", self._handle_double_click)
+        self._tree.bind("<Tab>", self._handle_tab)
 
     def set_columns_for_local(self) -> None:
         """Configure columns for local filesystem display."""
@@ -222,6 +225,11 @@ class FileListWidget(ttk.Frame):
             idx = int(selection[0])
             if idx < len(self._items):
                 self._on_double_click(self._items[idx])
+
+    def _handle_tab(self, event: tk.Event) -> str:
+        if self._on_tab:
+            self._on_tab()
+        return "break"
 
     def _handle_selection(self, event: tk.Event) -> None:
         if self._on_selection_changed:

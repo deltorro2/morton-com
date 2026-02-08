@@ -109,6 +109,7 @@ class App:
             projects=projects,
             show_hidden=self._config.show_hidden_files,
             on_selection_changed=self._on_panel_selection_changed,
+            on_tab=self._on_tab,
         )
         self._right_panel = Panel(
             paned,
@@ -119,6 +120,7 @@ class App:
             projects=projects,
             show_hidden=self._config.show_hidden_files,
             on_selection_changed=self._on_panel_selection_changed,
+            on_tab=self._on_tab,
         )
 
         paned.add(self._left_panel, weight=1)
@@ -154,8 +156,7 @@ class App:
         self._root.bind(f"<{mod}-i>", lambda e: self._on_properties())
         self._root.bind("<Alt-Return>", lambda e: self._on_properties())
 
-        # Tab to switch panels (bind_all so it works regardless of focused widget)
-        self._root.bind_all("<Tab>", self._on_tab)
+        # Tab is handled via on_tab callback bound directly on each treeview
 
         # Backspace to go up
         self._root.bind("<BackSpace>", lambda e: self._on_navigate_up())
@@ -310,8 +311,8 @@ class App:
     def _on_navigate_up(self) -> None:
         self._active_panel().navigate_up()
 
-    def _on_tab(self, event: tk.Event) -> str:
-        """Switch focus between panels."""
+    def _on_tab(self) -> None:
+        """Switch focus between panels (Total Commander style)."""
         self._switching_selection = True
         old_panel = self._active_panel()
         if self._active_panel_id == "left":
@@ -326,7 +327,6 @@ class App:
         self._toolbar.set_actions_enabled(
             len(new_panel.get_selected_items()) > 0
         )
-        return "break"  # Prevent default Tab behavior
 
     def _on_panel_selection_changed(self, panel_id: str, items: list) -> None:
         """Update toolbar state when selection changes."""

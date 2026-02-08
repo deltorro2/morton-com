@@ -36,6 +36,7 @@ class Panel(ttk.Frame):
         projects: list | None = None,
         show_hidden: bool = False,
         on_selection_changed: callable | None = None,
+        on_tab: callable | None = None,
     ) -> None:
         super().__init__(parent)
         self._panel_id = panel_id
@@ -45,6 +46,7 @@ class Panel(ttk.Frame):
         self._projects = projects or []
         self._show_hidden = show_hidden
         self._on_selection_changed = on_selection_changed
+        self._on_tab = on_tab
 
         self._state = PanelState(
             id=panel_id,
@@ -81,6 +83,7 @@ class Panel(ttk.Frame):
             values=source_options,
             state="readonly",
             width=26,
+            takefocus=False,
         )
         self._source_combo.pack(side=tk.LEFT, padx=(0, 5))
         self._source_combo.bind("<<ComboboxSelected>>", self._on_source_changed)
@@ -99,6 +102,7 @@ class Panel(ttk.Frame):
             self,
             on_double_click=self._on_item_double_click,
             on_selection_changed=self._on_item_selection_changed,
+            on_tab=self._on_tab,
         )
         self._file_list.pack(fill=tk.BOTH, expand=True, padx=2, pady=2)
 
