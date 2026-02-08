@@ -301,6 +301,7 @@ class Panel(ttk.Frame):
             self._path_var.set(self._state.location)
             self._file_list.set_columns_for_local()
             self._load_current()
+            self._file_list.focus_widget()
         elif value.startswith("GCS: "):
             project_name = value[5:]
             # Find matching project
@@ -329,6 +330,7 @@ class Panel(ttk.Frame):
         self._path_var.set(f"GCS: {project_id}")
         self._file_list.set_columns_for_gcs_buckets()
         self._load_current()
+        self._file_list.focus_widget()
 
     def _prompt_sign_in(self, project_id: str) -> None:
         """Show sign-in dialog, then load project on success."""
