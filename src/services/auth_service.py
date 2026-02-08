@@ -184,11 +184,14 @@ class AuthService:
             if on_success:
                 on_success(session)
 
-        except AuthenticationError:
-            # Re-raise our own errors
+        except AuthenticationError as exc:
+            # Handle our own errors
             with self._lock:
                 self._state = AuthState.SIGNED_OUT
-            raise
+            logger.error("Sign-in failed: %s", exc)
+            if on_error:
+                on_error(exc)
+            return
 
         except Exception as exc:
             with self._lock:
