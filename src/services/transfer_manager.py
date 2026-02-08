@@ -333,13 +333,14 @@ class TransferManager:
             )
         op.current_file = item.display_name
         if item.is_prefix:
-            # Download all objects under prefix
+            # Download all objects under prefix, preserving the folder name
             objects, prefixes = self._gcs_client.list_objects(
                 item.bucket_name, prefix=item.name, delimiter="",
             )
+            folder_name = item.display_name
             for obj in objects:
                 relative = obj.name[len(item.name):]
-                local_path = Path(dest.path) / relative
+                local_path = Path(dest.path) / folder_name / relative
                 local_path.parent.mkdir(parents=True, exist_ok=True)
                 self._gcs_client.download_file(
                     obj.bucket_name, obj.name, local_path,
@@ -368,9 +369,10 @@ class TransferManager:
             objects, _ = self._gcs_client.list_objects(
                 item.bucket_name, prefix=item.name, delimiter="",
             )
+            folder_name = item.display_name
             for obj in objects:
                 relative = obj.name[len(item.name):]
-                dest_name = dest.path + relative
+                dest_name = dest.path + folder_name + "/" + relative
                 self._gcs_client.copy_object(
                     obj.bucket_name, obj.name, dest.bucket_name, dest_name,
                 )

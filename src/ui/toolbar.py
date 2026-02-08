@@ -37,8 +37,8 @@ class Toolbar(ttk.Frame):
         self._buttons: dict[str, ttk.Button] = {}
 
         btn_defs = [
-            ("copy", f"Copy ({mod}C)", "copy"),
-            ("move", f"Move ({mod}X)", "move"),
+            ("copy", "Copy (F5)", "copy"),
+            ("move", "Move (F6)", "move"),
             ("delete", "Delete (Del)", "delete"),
             ("properties", f"Properties ({mod}I)", "properties"),
             ("refresh", f"Refresh ({mod}R)", "refresh"),

@@ -11,9 +11,8 @@ from src.platform import get_platform
 from src.platform.base import PlatformService
 from src.services.auth_service import AuthService
 from src.services.config_manager import ConfigManager
-from src.models import ConflictResolution, SourceType
+from src.models import SourceType
 from src.models.transfer_operation import TransferDestination, TransferOperation
-from src.services.gcs_client import GCSClient
 from src.services.local_filesystem import LocalFilesystem
 from src.services.transfer_manager import TransferManager
 from src.ui.account_menu import AccountMenu
@@ -38,9 +37,6 @@ class App:
         self._platform = platform_service or get_platform()
         self._gcs_client = gcs_client
         self._config = config_manager.config
-        self._clipboard: list = []
-        self._clipboard_is_cut = False
-        self._clipboard_source_panel: str = "left"
         self._active_panel_id = "left"
         self._switching_selection = False
         self._transfer_mgr = TransferManager(
@@ -135,10 +131,9 @@ class App:
         is_mac = sys.platform == "darwin"
         mod = "Command" if is_mac else "Control"
 
-        # Copy / Paste
-        self._root.bind(f"<{mod}-c>", lambda e: self._on_copy())
-        self._root.bind(f"<{mod}-v>", lambda e: self._on_paste())
-        self._root.bind(f"<{mod}-x>", lambda e: self._on_move())
+        # Copy (F5) / Move (F6) — direct operations with confirmation
+        self._root.bind("<F5>", lambda e: self._on_copy())
+        self._root.bind("<F6>", lambda e: self._on_move())
 
         # Delete
         self._root.bind("<Delete>", lambda e: self._on_delete())
@@ -150,7 +145,6 @@ class App:
 
         # Refresh
         self._root.bind(f"<{mod}-r>", lambda e: self._on_refresh())
-        self._root.bind("<F5>", lambda e: self._on_refresh())
 
         # Properties
         self._root.bind(f"<{mod}-i>", lambda e: self._on_properties())
@@ -192,26 +186,47 @@ class App:
     # Actions
     # ------------------------------------------------------------------
 
-    def _on_copy(self) -> None:
-        items = self._active_panel().get_selected_items()
-        if items:
-            self._clipboard = items
-            self._clipboard_is_cut = False
-            self._clipboard_source_panel = self._active_panel_id
+    def _get_destination_path(self, panel: Panel) -> str:
+        """Build a human-readable destination path string for a panel."""
+        state = panel.state
+        if state.source_type == SourceType.LOCAL:
+            return state.location
+        elif state.source_type == SourceType.GCS_BUCKET:
+            prefix = state.location or ""
+            return f"gs://{state.bucket_name}/{prefix}"
+        return ""
 
-    def _on_move(self) -> None:
-        items = self._active_panel().get_selected_items()
-        if items:
-            self._clipboard = items
-            self._clipboard_is_cut = True
-            self._clipboard_source_panel = self._active_panel_id
+    def _execute_transfer(self, operation: str) -> None:
+        """Show confirmation dialog and execute a copy or move transfer.
 
-    def _on_paste(self) -> None:
-        if not self._clipboard:
+        Parameters
+        ----------
+        operation:
+            Either ``"Copy"`` or ``"Move"``.
+        """
+        items = self._active_panel().get_selected_items()
+        if not items:
             return
 
-        dest_panel = self._active_panel()
+        dest_panel = self._inactive_panel()
         dest_state = dest_panel.state
+
+        # Don't allow transfer to GCS project listing (no file target)
+        if dest_state.source_type == SourceType.GCS_PROJECT:
+            return
+
+        dest_path = self._get_destination_path(dest_panel)
+
+        from tkinter import messagebox
+
+        confirmed = messagebox.askokcancel(
+            operation,
+            f"Are you sure you want to {operation} these objects to {dest_path}?",
+            parent=self._root,
+        )
+        if not confirmed:
+            return
+
         destination = TransferDestination(
             type=dest_state.source_type,
             path=dest_state.location,
@@ -221,9 +236,9 @@ class App:
 
         from src.ui.dialogs.progress import ProgressDialog
 
-        if self._clipboard_is_cut:
+        if operation == "Move":
             op = self._transfer_mgr.move(
-                items=list(self._clipboard),
+                items=list(items),
                 destination=destination,
                 on_progress=lambda o: self._root.after(0, lambda: self._update_progress(o)),
                 on_complete=lambda o: self._root.after(0, lambda: self._transfer_complete(o)),
@@ -231,7 +246,7 @@ class App:
             )
         else:
             op = self._transfer_mgr.copy(
-                items=list(self._clipboard),
+                items=list(items),
                 destination=destination,
                 on_progress=lambda o: self._root.after(0, lambda: self._update_progress(o)),
                 on_complete=lambda o: self._root.after(0, lambda: self._transfer_complete(o)),
@@ -242,7 +257,12 @@ class App:
             self._root, op,
             on_cancel=lambda: self._transfer_mgr.cancel(op),
         )
-        self._clipboard = []
+
+    def _on_copy(self) -> None:
+        self._execute_transfer("Copy")
+
+    def _on_move(self) -> None:
+        self._execute_transfer("Move")
 
     def _update_progress(self, op: TransferOperation) -> None:
         if hasattr(self, "_progress_dialog") and self._progress_dialog.winfo_exists():
