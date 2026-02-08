@@ -156,7 +156,13 @@ class App:
         self._root.bind(f"<{mod}-i>", lambda e: self._on_properties())
         self._root.bind("<Alt-Return>", lambda e: self._on_properties())
 
-        # Tab is handled via on_tab callback bound directly on each treeview
+        # Tab: remove ALL default traversal, then bind at every level so
+        # Tab always switches panels regardless of which widget has focus.
+        self._root.unbind_all("<Tab>")
+        self._root.unbind_class("Treeview", "<Tab>")
+        self._root.unbind_class("TCombobox", "<Tab>")
+        self._root.unbind_class("TButton", "<Tab>")
+        self._root.bind_all("<Tab>", self._on_tab_event)
 
         # Backspace to go up
         self._root.bind("<BackSpace>", lambda e: self._on_navigate_up())
@@ -310,6 +316,11 @@ class App:
 
     def _on_navigate_up(self) -> None:
         self._active_panel().navigate_up()
+
+    def _on_tab_event(self, event: tk.Event) -> str:
+        """Tab event handler (accepts event, returns 'break')."""
+        self._on_tab()
+        return "break"
 
     def _on_tab(self) -> None:
         """Switch focus between panels (Total Commander style)."""
