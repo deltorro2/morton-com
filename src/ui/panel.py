@@ -231,6 +231,8 @@ class Panel(ttk.Frame):
             msg = str(exc)
             self.after(0, lambda: self._show_error(msg))
 
+    _MAX_DISPLAY_ITEMS = 1000
+
     def _display_items(self, items: list, mode: str) -> None:
         """Update the file list on the main thread."""
         self._state.items = items
@@ -244,11 +246,18 @@ class Panel(ttk.Frame):
         elif mode == "gcs_object":
             self._file_list.set_columns_for_gcs_objects()
 
-        self._file_list.set_items(items, mode)
+        total = len(items)
+        display_items = items[:self._MAX_DISPLAY_ITEMS]
+        self._file_list.set_items(display_items, mode)
         self._file_list.select_first()
         self._file_list.focus_widget()
-        count = len(items)
-        self._status_var.set(f"{count} item{'s' if count != 1 else ''}")
+
+        if total > self._MAX_DISPLAY_ITEMS:
+            self._status_var.set(
+                f"Showing {self._MAX_DISPLAY_ITEMS} of {total} items"
+            )
+        else:
+            self._status_var.set(f"{total} item{'s' if total != 1 else ''}")
 
     def _show_error(self, message: str) -> None:
         self._state.loading = False

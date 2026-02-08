@@ -73,12 +73,12 @@ class FileListWidget(ttk.Frame):
             )
             self._tree.column(col_id, width=width, anchor=anchor, stretch=stretch)
 
-        # Scrollbar
-        scrollbar = ttk.Scrollbar(self, orient=tk.VERTICAL, command=self._tree.yview)
-        self._tree.configure(yscrollcommand=scrollbar.set)
+        # Scrollbar (auto-hide: only visible when content overflows)
+        self._scrollbar = ttk.Scrollbar(self, orient=tk.VERTICAL, command=self._tree.yview)
+        self._tree.configure(yscrollcommand=self._on_scroll_set)
+        self._scrollbar_visible = False
 
         self._tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
 
         # Bindings
         self._tree.bind("<Double-1>", self._handle_double_click)
@@ -234,6 +234,18 @@ class FileListWidget(ttk.Frame):
     def _handle_selection(self, event: tk.Event) -> None:
         if self._on_selection_changed:
             self._on_selection_changed(self.get_selected_items())
+
+    def _on_scroll_set(self, first: str, last: str) -> None:
+        """Show/hide the scrollbar based on whether all content is visible."""
+        self._scrollbar.set(first, last)
+        if float(first) <= 0.0 and float(last) >= 1.0:
+            if self._scrollbar_visible:
+                self._scrollbar.pack_forget()
+                self._scrollbar_visible = False
+        else:
+            if not self._scrollbar_visible:
+                self._scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+                self._scrollbar_visible = True
 
     def focus_widget(self) -> None:
         """Set keyboard focus to the treeview."""
