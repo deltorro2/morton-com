@@ -42,6 +42,7 @@ class App:
         self._clipboard_is_cut = False
         self._clipboard_source_panel: str = "left"
         self._active_panel_id = "left"
+        self._switching_selection = False
         self._transfer_mgr = TransferManager(
             local_fs=local_fs,
             gcs_client=gcs_client,
@@ -123,9 +124,9 @@ class App:
         paned.add(self._left_panel, weight=1)
         paned.add(self._right_panel, weight=1)
 
-        # Initial focus
-        self._left_panel.focus_panel()
+        # Initial focus (delayed so async item loading finishes first)
         self._toolbar.set_actions_enabled(False)
+        self._root.after(200, self._initial_focus)
 
     def _bind_shortcuts(self) -> None:
         """Register keyboard shortcuts."""
@@ -153,8 +154,8 @@ class App:
         self._root.bind(f"<{mod}-i>", lambda e: self._on_properties())
         self._root.bind("<Alt-Return>", lambda e: self._on_properties())
 
-        # Tab to switch panels
-        self._root.bind("<Tab>", self._on_tab)
+        # Tab to switch panels (bind_all so it works regardless of focused widget)
+        self._root.bind_all("<Tab>", self._on_tab)
 
         # Backspace to go up
         self._root.bind("<BackSpace>", lambda e: self._on_navigate_up())
@@ -162,6 +163,18 @@ class App:
     # ------------------------------------------------------------------
     # Panel helpers
     # ------------------------------------------------------------------
+
+    def _initial_focus(self) -> None:
+        """Set up left panel focus after startup item loading finishes."""
+        self._switching_selection = True
+        self._active_panel_id = "left"
+        self._right_panel.clear_selection()
+        self._left_panel.focus_panel()
+        self._left_panel.select_first()
+        self._switching_selection = False
+        self._toolbar.set_actions_enabled(
+            len(self._left_panel.get_selected_items()) > 0
+        )
 
     def _active_panel(self) -> Panel:
         return self._left_panel if self._active_panel_id == "left" else self._right_panel
@@ -299,6 +312,7 @@ class App:
 
     def _on_tab(self, event: tk.Event) -> str:
         """Switch focus between panels."""
+        self._switching_selection = True
         old_panel = self._active_panel()
         if self._active_panel_id == "left":
             self._active_panel_id = "right"
@@ -308,16 +322,22 @@ class App:
         new_panel = self._active_panel()
         new_panel.focus_panel()
         new_panel.select_first()
+        self._switching_selection = False
+        self._toolbar.set_actions_enabled(
+            len(new_panel.get_selected_items()) > 0
+        )
         return "break"  # Prevent default Tab behavior
 
     def _on_panel_selection_changed(self, panel_id: str, items: list) -> None:
         """Update toolbar state when selection changes."""
+        if self._switching_selection:
+            return
         if self._active_panel_id != panel_id:
+            self._switching_selection = True
             old_panel = self._active_panel()
             self._active_panel_id = panel_id
             old_panel.clear_selection()
-        else:
-            self._active_panel_id = panel_id
+            self._switching_selection = False
         self._toolbar.set_actions_enabled(len(items) > 0)
 
     def _on_auth_changed(self) -> None:
