@@ -156,13 +156,12 @@ class App:
         self._root.bind(f"<{mod}-i>", lambda e: self._on_properties())
         self._root.bind("<Alt-Return>", lambda e: self._on_properties())
 
-        # Tab: remove ALL default traversal, then bind at every level so
-        # Tab always switches panels regardless of which widget has focus.
-        self._root.unbind_all("<Tab>")
-        self._root.unbind_class("Treeview", "<Tab>")
-        self._root.unbind_class("TCombobox", "<Tab>")
-        self._root.unbind_class("TButton", "<Tab>")
-        self._root.bind_all("<Tab>", self._on_tab_event)
+        # Tab: kill ALL default Tk focus traversal at the Tcl level,
+        # then install our own handler so Tab only switches panels.
+        self._root.tk.eval('bind all <Tab> {break}')
+        self._root.tk.eval('bind all <Shift-Tab> {break}')
+        self._root.bind("<Tab>", self._on_tab_event)
+        self._root.bind("<Shift-Tab>", self._on_tab_event)
 
         # Backspace to go up
         self._root.bind("<BackSpace>", lambda e: self._on_navigate_up())

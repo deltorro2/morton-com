@@ -49,6 +49,7 @@ class Toolbar(ttk.Frame):
                 self,
                 text=label,
                 command=lambda k=callback_key: self._invoke(k),
+                takefocus=False,
             )
             btn.pack(side=tk.LEFT, padx=2, pady=2)
             self._buttons[name] = btn
@@ -59,6 +60,7 @@ class Toolbar(ttk.Frame):
                 self,
                 text="Settings",
                 command=lambda: self._invoke("settings"),
+                takefocus=False,
             )
             settings_btn.pack(side=tk.RIGHT, padx=2, pady=2)
             self._buttons["settings"] = settings_btn

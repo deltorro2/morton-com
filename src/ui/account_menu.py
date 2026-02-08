@@ -32,6 +32,7 @@ class AccountMenu(ttk.Frame):
             self,
             textvariable=self._account_var,
             direction="below",
+            takefocus=False,
         )
         self._menu_btn.pack(side=tk.RIGHT, padx=5)
 
