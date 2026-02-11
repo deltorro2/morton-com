@@ -1,8 +1,9 @@
-# Quickstart: Dual-Panel File Manager
+# Dual-Panel File Manager
 
 **Feature**: 001-dual-panel-filemanager
 **Date**: 2026-02-04
 **Updated**: 2026-02-04 (added browser-based authentication)
+## Platforms MacOs,Windows
 
 ## Prerequisites
 
