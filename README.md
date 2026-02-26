@@ -1,4 +1,4 @@
-# Dual-Panel File Manager
+# Dual-Panel File Manager for Google Cloud Storage
 
 **Feature**: 001-dual-panel-filemanager
 **Date**: 2026-02-04
